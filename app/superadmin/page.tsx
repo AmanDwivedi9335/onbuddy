@@ -2,7 +2,7 @@
 
 import { ReactNode, useMemo, useState } from "react";
 import { Profile, UserAccount } from "@/lib/types";
-import { useOnbuddyData, uid } from "@/lib/useOnbuddyData";
+import { useOnbuddyData } from "@/lib/useOnbuddyData";
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -21,10 +21,19 @@ export default function SuperadminPage() {
     profiles,
     knowledgeBase,
     users,
-    setDepartments,
-    setProfiles,
-    setKnowledgeBase,
-    setUsers,
+    loading,
+    error,
+    refreshData,
+    createDepartment,
+    updateDepartment,
+    deleteDepartment,
+    createProfile,
+    updateProfile,
+    deleteProfile,
+    createKnowledgeEntry,
+    updateKnowledgeEntry,
+    deleteKnowledgeEntry,
+    createUser,
   } = useOnbuddyData();
 
   const [superAdminMode, setSuperAdminMode] = useState<"login" | "signup">("login");
@@ -57,7 +66,7 @@ export default function SuperadminPage() {
     }, {});
   }, [profiles]);
 
-  function handleSuperAdminSubmit() {
+  async function handleSuperAdminSubmit() {
     const trimmedEmail = superAdminCredentials.email.trim().toLowerCase();
     const trimmedName = superAdminCredentials.name.trim();
 
@@ -86,123 +95,141 @@ export default function SuperadminPage() {
         return;
       }
 
-      const newAdmin: UserAccount = {
-        id: uid("super"),
-        role: "superadmin",
-        name: trimmedName || "New Superadmin",
-        email: trimmedEmail,
-        password: superAdminCredentials.password,
-      };
+      try {
+        const newAdmin = await createUser({
+          role: "superadmin",
+          name: trimmedName || "New Superadmin",
+          email: trimmedEmail,
+          password: superAdminCredentials.password,
+        });
 
-      setUsers((prev) => [...prev, newAdmin]);
-      setSuperAdminSession(newAdmin);
+        setSuperAdminSession(newAdmin);
+      } catch (err) {
+        console.error("Failed to create superadmin", err);
+        alert("Unable to create superadmin account. Please try again.");
+      }
     }
   }
 
-  function saveDepartment() {
+  async function saveDepartment() {
     const trimmedName = departmentForm.name.trim();
     if (!trimmedName) return;
 
-    if (departmentForm.id) {
-      setDepartments((prev) =>
-        prev.map((dept) =>
-          dept.id === departmentForm.id ? { ...dept, name: trimmedName } : dept,
-        ),
-      );
-    } else {
-      setDepartments((prev) => [...prev, { id: uid("dept"), name: trimmedName }]);
-    }
+    try {
+      if (departmentForm.id) {
+        await updateDepartment(departmentForm.id, trimmedName);
+      } else {
+        await createDepartment(trimmedName);
+      }
 
-    setDepartmentForm({ id: "", name: "" });
+      setDepartmentForm({ id: "", name: "" });
+    } catch (err) {
+      console.error("Department save failed", err);
+      alert("Unable to save department. Please try again.");
+    }
   }
 
-  function saveProfile() {
+  async function saveProfile() {
     if (!profileForm.departmentId || !profileForm.name.trim()) return;
 
-    if (profileForm.id) {
-      setProfiles((prev) =>
-        prev.map((profile) =>
-          profile.id === profileForm.id
-            ? {
-                ...profile,
-                departmentId: profileForm.departmentId,
-                name: profileForm.name.trim(),
-                summary: profileForm.summary.trim(),
-              }
-            : profile,
-        ),
-      );
-    } else {
-      setProfiles((prev) => [
-        ...prev,
-        {
-          id: uid("profile"),
+    try {
+      if (profileForm.id) {
+        await updateProfile(profileForm.id, {
           departmentId: profileForm.departmentId,
           name: profileForm.name.trim(),
           summary: profileForm.summary.trim(),
-        },
-      ]);
-    }
+        });
+      } else {
+        await createProfile({
+          departmentId: profileForm.departmentId,
+          name: profileForm.name.trim(),
+          summary: profileForm.summary.trim(),
+        });
+      }
 
-    setProfileForm({ id: "", departmentId: "", name: "", summary: "" });
+      setProfileForm({ id: "", departmentId: "", name: "", summary: "" });
+    } catch (err) {
+      console.error("Profile save failed", err);
+      alert("Unable to save profile. Please try again.");
+    }
   }
 
-  function saveKnowledge() {
+  async function saveKnowledge() {
     if (!knowledgeForm.profileId || !knowledgeForm.title.trim()) return;
 
-    if (knowledgeForm.id) {
-      setKnowledgeBase((prev) =>
-        prev.map((entry) =>
-          entry.id === knowledgeForm.id
-            ? {
-                ...entry,
-                profileId: knowledgeForm.profileId,
-                title: knowledgeForm.title.trim(),
-                details: knowledgeForm.details.trim(),
-              }
-            : entry,
-        ),
-      );
-    } else {
-      setKnowledgeBase((prev) => [
-        ...prev,
-        {
-          id: uid("kb"),
+    try {
+      if (knowledgeForm.id) {
+        await updateKnowledgeEntry(knowledgeForm.id, {
           profileId: knowledgeForm.profileId,
           title: knowledgeForm.title.trim(),
           details: knowledgeForm.details.trim(),
-        },
-      ]);
+        });
+      } else {
+        await createKnowledgeEntry({
+          profileId: knowledgeForm.profileId,
+          title: knowledgeForm.title.trim(),
+          details: knowledgeForm.details.trim(),
+        });
+      }
+
+      setKnowledgeForm({ id: "", profileId: "", title: "", details: "" });
+    } catch (err) {
+      console.error("Knowledge save failed", err);
+      alert("Unable to save knowledge entry. Please try again.");
     }
-
-    setKnowledgeForm({ id: "", profileId: "", title: "", details: "" });
   }
 
-  function deleteDepartment(id: string) {
-    const remainingProfiles = profiles.filter((profile) => profile.departmentId !== id);
+  async function handleDeleteDepartment(id: string) {
+    try {
+      await deleteDepartment(id);
+    } catch (err) {
+      console.error("Department delete failed", err);
+      alert("Unable to delete department. Please try again.");
+    }
+  }
 
-    setDepartments((prev) => prev.filter((dept) => dept.id !== id));
-    setProfiles(remainingProfiles);
-    setKnowledgeBase((prev) =>
-      prev.filter((entry) => remainingProfiles.some((profile) => profile.id === entry.profileId)),
+  async function handleDeleteProfile(id: string) {
+    try {
+      await deleteProfile(id);
+    } catch (err) {
+      console.error("Profile delete failed", err);
+      alert("Unable to delete profile. Please try again.");
+    }
+  }
+
+  async function handleDeleteKnowledge(id: string) {
+    try {
+      await deleteKnowledgeEntry(id);
+    } catch (err) {
+      console.error("Knowledge delete failed", err);
+      alert("Unable to delete knowledge entry. Please try again.");
+    }
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-3">
+          <p className="text-sm text-slate-400">Loading organization data from MongoDB...</p>
+        </div>
+      </main>
     );
-    setUsers((prev) =>
-      prev.filter(
-        (user) =>
-          user.departmentId !== id &&
-          (!user.profileId || remainingProfiles.some((profile) => profile.id === user.profileId)),
-      ),
+  }
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-4">
+          <p className="text-sm text-red-200">{error}</p>
+          <button
+            className="rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-emerald-950"
+            onClick={refreshData}
+          >
+            Retry loading data
+          </button>
+        </div>
+      </main>
     );
-  }
-
-  function deleteProfile(id: string) {
-    setProfiles((prev) => prev.filter((profile) => profile.id !== id));
-    setKnowledgeBase((prev) => prev.filter((entry) => entry.profileId !== id));
-    setUsers((prev) => prev.filter((user) => user.profileId !== id));
-  }
-
-  function deleteKnowledge(id: string) {
-    setKnowledgeBase((prev) => prev.filter((entry) => entry.id !== id));
   }
 
   if (!superAdminSession) {
@@ -355,7 +382,7 @@ export default function SuperadminPage() {
                       </button>
                       <button
                         className="text-red-300"
-                        onClick={() => deleteDepartment(dept.id)}
+                        onClick={() => handleDeleteDepartment(dept.id)}
                       >
                         Delete
                       </button>
@@ -436,7 +463,10 @@ export default function SuperadminPage() {
                         >
                           Edit
                         </button>
-                        <button className="text-red-300" onClick={() => deleteProfile(profile.id)}>
+                        <button
+                          className="text-red-300"
+                          onClick={() => handleDeleteProfile(profile.id)}
+                        >
                           Delete
                         </button>
                       </div>
@@ -525,7 +555,10 @@ export default function SuperadminPage() {
                       >
                         Edit
                       </button>
-                      <button className="text-red-300" onClick={() => deleteKnowledge(entry.id)}>
+                      <button
+                        className="text-red-300"
+                        onClick={() => handleDeleteKnowledge(entry.id)}
+                      >
                         Delete
                       </button>
                     </div>

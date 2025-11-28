@@ -4,11 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Profile, UserAccount } from "@/lib/types";
-import { useOnbuddyData, uid } from "@/lib/useOnbuddyData";
+import { useOnbuddyData } from "@/lib/useOnbuddyData";
 import { readUserSession, writeUserSession } from "@/lib/userSession";
 
 export default function UserAuthPage() {
-  const { departments, profiles, users, setUsers } = useOnbuddyData();
+  const {
+    departments,
+    profiles,
+    users,
+    loading,
+    error,
+    refreshData,
+    createUser,
+  } = useOnbuddyData();
   const router = useRouter();
 
   const [userMode, setUserMode] = useState<"login" | "signup">("login");
@@ -35,7 +43,7 @@ export default function UserAuthPage() {
     }, {});
   }, [profiles]);
 
-  function handleUserSubmit() {
+  async function handleUserSubmit() {
     const trimmedEmail = userCredentials.email.trim().toLowerCase();
     const trimmedName = userCredentials.name.trim();
 
@@ -68,20 +76,49 @@ export default function UserAuthPage() {
         return;
       }
 
-      const newUser: UserAccount = {
-        id: uid("user"),
-        role: "user",
-        name: trimmedName || "New Teammate",
-        email: trimmedEmail,
-        password: userCredentials.password,
-        departmentId: userCredentials.departmentId,
-        profileId: userCredentials.profileId,
-      };
+      try {
+        const newUser: UserAccount = await createUser({
+          role: "user",
+          name: trimmedName || "New Teammate",
+          email: trimmedEmail,
+          password: userCredentials.password,
+          departmentId: userCredentials.departmentId,
+          profileId: userCredentials.profileId,
+        });
 
-      setUsers((prev) => [...prev, newUser]);
-      writeUserSession(newUser);
-      router.push("/user/workspace");
+        writeUserSession(newUser);
+        router.push("/user/workspace");
+      } catch (err) {
+        console.error("User signup failed", err);
+        alert("Unable to create user. Please try again.");
+      }
     }
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-3">
+          <p className="text-sm text-slate-400">Loading workspace data...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-4">
+          <p className="text-sm text-red-200">{error}</p>
+          <button
+            className="rounded-lg bg-blue-500 px-4 py-2 font-semibold text-blue-950"
+            onClick={refreshData}
+          >
+            Retry
+          </button>
+        </div>
+      </main>
+    );
   }
 
   return (

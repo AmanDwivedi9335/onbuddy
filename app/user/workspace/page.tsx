@@ -9,7 +9,7 @@ import { useOnbuddyData } from "@/lib/useOnbuddyData";
 import { readUserSession, writeUserSession } from "@/lib/userSession";
 
 export default function UserWorkspacePage() {
-  const { departments, profiles, knowledgeBase } = useOnbuddyData();
+  const { departments, profiles, knowledgeBase, loading, error, refreshData } = useOnbuddyData();
   const router = useRouter();
 
   const [userSession, setUserSession] = useState<UserAccount | null>(() => readUserSession());
@@ -51,6 +51,32 @@ export default function UserWorkspacePage() {
       <main className="min-h-screen bg-slate-950 text-slate-50">
         <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-3">
           <p className="text-sm text-slate-400">Redirecting to user login...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-3">
+          <p className="text-sm text-slate-400">Loading your workspace data...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-4">
+          <p className="text-sm text-red-200">{error}</p>
+          <button
+            className="rounded-lg bg-blue-500 px-4 py-2 font-semibold text-blue-950"
+            onClick={refreshData}
+          >
+            Retry
+          </button>
         </div>
       </main>
     );

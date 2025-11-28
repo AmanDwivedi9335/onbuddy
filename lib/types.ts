@@ -32,3 +32,11 @@ export type ChatMessage = {
   content: string;
   createdAt: string;
 };
+
+export type ChatTopic = {
+  id: string;
+  userId: string;
+  title: string;
+  createdAt: string;
+  messages: ChatMessage[];
+};
