@@ -7,20 +7,17 @@ if (!uri) {
   throw new Error("Please define the MONGODB_URI environment variable in .env");
 }
 
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
-
 declare global {
-  // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
-if (!global._mongoClientPromise) {
-  client = new MongoClient(uri);
-  global._mongoClientPromise = client.connect();
-}
+const client = new MongoClient(uri);
+const clientPromise: Promise<MongoClient> =
+  global._mongoClientPromise || client.connect();
 
-clientPromise = global._mongoClientPromise;
+if (!global._mongoClientPromise) {
+  global._mongoClientPromise = clientPromise;
+}
 
 export async function getDb() {
   const client = await clientPromise;
