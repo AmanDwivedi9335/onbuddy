@@ -1,14 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { getDb } from "@/lib/mongodb";
 import { ChatTopic } from "@/lib/types";
 
 export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const payload = (await request.json()) as Partial<ChatTopic>;
-  const { id } = params;
+  const { id } = await params;
 
   const db = await getDb();
   await db
@@ -19,10 +19,10 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
-  { params }: { params: { id: string } },
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = params;
+  const { id } = await params;
   const db = await getDb();
 
   await db.collection("topics").deleteOne({ id });

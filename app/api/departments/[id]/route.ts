@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { getDb } from "@/lib/mongodb";
 
 export async function PUT(
-  _request: Request,
-  { params }: { params: { id: string } },
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = params;
+  const { id } = await params;
   const payload = (await _request.json()) as { name?: string };
 
   if (!payload.name || !payload.name.trim()) {
@@ -22,10 +22,10 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
-  { params }: { params: { id: string } },
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = params;
+  const { id } = await params;
   const db = await getDb();
 
   const profiles = await db
