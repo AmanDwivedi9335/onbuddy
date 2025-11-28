@@ -1,47 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { ChatMessage, KnowledgeBaseEntry, UserAccount } from "@/lib/types";
+import { UserAccount } from "@/lib/types";
 import { useOnbuddyData } from "@/lib/useOnbuddyData";
 import { readUserSession, writeUserSession } from "@/lib/userSession";
-
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en", {
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(date));
-}
-
-function scoreEntry(question: string, entry: KnowledgeBaseEntry) {
-  const normalizedQuestion = question.toLowerCase();
-  const haystack = `${entry.title} ${entry.details}`.toLowerCase();
-  const words = normalizedQuestion
-    .replace(/[^a-z0-9\s]/gi, " ")
-    .split(" ")
-    .filter(Boolean);
-
-  let score = 0;
-  for (const word of words) {
-    if (haystack.includes(word)) {
-      score += 1;
-    }
-  }
-
-  return score;
-}
 
 export default function UserWorkspacePage() {
   const { departments, profiles, knowledgeBase } = useOnbuddyData();
   const router = useRouter();
 
   const [userSession, setUserSession] = useState<UserAccount | null>(() => readUserSession());
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [userInput, setUserInput] = useState("");
-
   useEffect(() => {
     if (!userSession) {
       router.replace("/user");
@@ -68,55 +39,6 @@ export default function UserWorkspacePage() {
     () => knowledgeBase.filter((entry) => entry.profileId === userSession?.profileId),
     [knowledgeBase, userSession?.profileId],
   );
-
-  function composeAnswer(question: string) {
-    if (!userProfile) {
-      return {
-        reply:
-          "I couldn't find a profile linked to your account. Ask a superadmin to connect you to a department profile.",
-        entry: null,
-      };
-    }
-
-    const relevantEntries = profileKnowledge
-      .map((entry) => ({ entry, score: scoreEntry(question, entry) }))
-      .sort((a, b) => b.score - a.score);
-
-    const top = relevantEntries[0];
-
-    if (!top || top.score === 0) {
-      return {
-        reply:
-          "I don't have a perfect answer yet. I've logged your question so the superadmin can enrich the knowledge base.",
-        entry: null,
-      };
-    }
-
-    const reply = `For the ${userProfile.name} profile, here's what I found in "${top.entry.title}": ${top.entry.details}`;
-    return { reply, entry: top.entry };
-  }
-
-  function handleSendMessage() {
-    const trimmed = userInput.trim();
-    if (!trimmed) return;
-
-    const newUserMessage: ChatMessage = {
-      role: "user",
-      content: trimmed,
-      createdAt: new Date().toISOString(),
-    };
-
-    const { reply } = composeAnswer(trimmed);
-
-    const assistantMessage: ChatMessage = {
-      role: "assistant",
-      content: reply,
-      createdAt: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, newUserMessage, assistantMessage]);
-    setUserInput("");
-  }
 
   function signOutUser() {
     setUserSession(null);
@@ -188,60 +110,40 @@ export default function UserWorkspacePage() {
             )}
           </section>
 
-          <section className="lg:col-span-2 rounded-3xl border border-white/10 bg-slate-900/70 p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">Role-aware Chat</h3>
-              <p className="text-xs text-slate-400">Grounded in the knowledge base</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 h-[420px] flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-                {messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center text-slate-500">
-                    <p className="text-sm font-medium">Ask anything about your role</p>
-                    <p className="text-xs">Responses reference the knowledge base saved by the superadmin.</p>
-                  </div>
-                ) : (
-                  messages.map((message, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                          message.role === "user"
-                            ? "bg-blue-500 text-blue-950 rounded-br-sm"
-                            : "bg-slate-800 text-slate-100 rounded-bl-sm"
-                        }`}
-                      >
-                        <p className="whitespace-pre-wrap">{message.content}</p>
-                        <span className="block mt-1 text-[10px] opacity-70 text-right">
-                          {message.role === "user" ? "You" : "Onbuddy"} • {formatDate(message.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
+          <section className="lg:col-span-2 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl space-y-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="font-semibold">Dedicated chat area</h3>
+                <p className="text-sm text-slate-300">Open the chat UI to create topics and converse like ChatGPT.</p>
               </div>
-              <div className="border-t border-slate-800 p-3">
-                <div className="flex items-end gap-2">
-                  <textarea
-                    className="flex-1 resize-none rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 max-h-32 text-slate-50 placeholder:text-slate-500"
-                    placeholder="Ask about your onboarding, playbooks, or SOPs..."
-                    rows={1}
-                    disabled={!userSession}
-                    value={userInput}
-                    onChange={(e) => setUserInput(e.target.value)}
-                  />
-                  <button
-                    disabled={!userSession || !userInput.trim()}
-                    onClick={handleSendMessage}
-                    className="inline-flex items-center justify-center rounded-xl border border-blue-400 px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-500/80 bg-blue-500 text-blue-950 transition"
-                  >
-                    Send
-                  </button>
-                </div>
-                <p className="mt-1 text-[10px] text-slate-500">
-                  The reply uses your profile-specific knowledge. Replace the handler with your OpenAI API call to make it live.
+              <Link
+                href="/user/chats"
+                className="inline-flex items-center gap-2 rounded-xl border border-blue-400/60 bg-blue-500 px-4 py-2 text-sm font-semibold text-blue-950 shadow-lg shadow-blue-500/20 transition hover:bg-blue-400"
+              >
+                Launch chat topics
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12h15m0 0-6.75-6.75M19.5 12l-6.75 6.75" />
+                </svg>
+              </Link>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-blue-200/80">How it works</p>
+                <p className="mt-2 text-slate-200">
+                  Create chat topics from the sidebar, keep questions organized, and reuse the knowledge base curated for your profile.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">Tip</p>
+                <p className="text-sm text-slate-200">
+                  Use topics to split onboarding steps, SOP reviews, or device provisioning questions. Each thread stays grounded in your profile&apos;s knowledge.
                 </p>
               </div>
             </div>
