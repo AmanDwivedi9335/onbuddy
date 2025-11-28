@@ -68,6 +68,7 @@ export default function UserChatTopicsPage() {
   const [userInput, setUserInput] = useState("");
   const [topicsLoading, setTopicsLoading] = useState(false);
   const [topicsError, setTopicsError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!userSession) {
@@ -103,31 +104,19 @@ export default function UserChatTopicsPage() {
     [activeTopicId, topics],
   );
 
-  function composeAnswer(question: string) {
-    if (!userProfile) {
-      return {
-        reply:
-          "I couldn&apos;t find a profile linked to your account. Ask a superadmin to connect you to a department profile.",
-        entry: null,
-      };
-    }
+  function selectKnowledgeEntries(prompt: string) {
+    if (!userProfile) return [] as KnowledgeBaseEntry[];
 
-    const relevantEntries = profileKnowledge
-      .map((entry) => ({ entry, score: scoreEntry(question, entry) }))
-      .sort((a, b) => b.score - a.score);
+    const scored = profileKnowledge
+      .map((entry) => ({ entry, score: scoreEntry(prompt, entry) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map((item) => item.entry);
 
-    const top = relevantEntries[0];
+    if (scored.length > 0) return scored;
 
-    if (!top || top.score === 0) {
-      return {
-        reply:
-          "I don&apos;t have a perfect answer yet. I&apos;ve logged your question so the superadmin can enrich the knowledge base.",
-        entry: null,
-      };
-    }
-
-    const reply = `For the ${userProfile.name} profile, here&apos;s what I found in "${top.entry.title}": ${top.entry.details}`;
-    return { reply, entry: top.entry };
+    return profileKnowledge.slice(0, 3);
   }
 
   async function loadTopics(userId: string) {
@@ -188,10 +177,12 @@ export default function UserChatTopicsPage() {
   }
 
   async function handleSendMessage() {
-    if (!activeTopic || !userSession) return;
+    if (!activeTopic || !userSession || sending) return;
 
     const trimmed = userInput.trim();
     if (!trimmed) return;
+
+    setSending(true);
 
     const newUserMessage: ChatMessage = {
       role: "user",
@@ -199,24 +190,54 @@ export default function UserChatTopicsPage() {
       createdAt: new Date().toISOString(),
     };
 
-    const { reply } = composeAnswer(trimmed);
-
-    const assistantMessage: ChatMessage = {
-      role: "assistant",
-      content: reply,
-      createdAt: new Date().toISOString(),
-    };
-
-    const updatedTopic: ChatTopic = {
+    const pendingTopic: ChatTopic = {
       ...activeTopic,
       title: activeTopic.title === "New topic" ? summarizePrompt(trimmed) : activeTopic.title,
-      messages: [...activeTopic.messages, newUserMessage, assistantMessage],
+      messages: [...activeTopic.messages, newUserMessage],
     };
 
-    setTopics((prev) => sortTopics(prev.map((topic) => (topic.id === updatedTopic.id ? updatedTopic : topic))));
+    setTopics((prev) =>
+      sortTopics(prev.map((topic) => (topic.id === pendingTopic.id ? pendingTopic : topic))),
+    );
     setUserInput("");
 
     try {
+      setTopicsError(null);
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: pendingTopic.messages,
+          knowledgeBase: selectKnowledgeEntries(trimmed),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        const message =
+          (errorBody && errorBody.error) ||
+          "Unable to generate a chat reply. Check the OPENAIAPI key.";
+        throw new Error(message);
+      }
+
+      const payload = (await response.json()) as { reply: string };
+
+      const assistantMessage: ChatMessage = {
+        role: "assistant",
+        content: payload.reply,
+        createdAt: new Date().toISOString(),
+      };
+
+      const updatedTopic: ChatTopic = {
+        ...pendingTopic,
+        messages: [...pendingTopic.messages, assistantMessage],
+      };
+
+      setTopics((prev) =>
+        sortTopics(prev.map((topic) => (topic.id === updatedTopic.id ? updatedTopic : topic))),
+      );
+
       await fetch(`/api/topics/${activeTopic.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -226,9 +247,15 @@ export default function UserChatTopicsPage() {
         }),
       });
     } catch (err) {
-      console.error("Failed to persist topic", err);
-      setTopicsError("Unable to save your chat messages to MongoDB.");
+      console.error("Failed to send chat", err);
+      setTopicsError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save your chat messages to MongoDB.",
+      );
     }
+
+    setSending(false);
   }
 
   function signOutUser() {
@@ -403,7 +430,7 @@ export default function UserChatTopicsPage() {
                   onChange={(e) => setUserInput(e.target.value)}
                 />
                 <button
-                  disabled={!userSession || !userInput.trim()}
+                  disabled={!userSession || !userInput.trim() || sending}
                   onClick={handleSendMessage}
                   className="inline-flex items-center justify-center rounded-xl border border-blue-400 px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-500/80 bg-blue-500 text-blue-950 transition"
                 >
@@ -411,7 +438,7 @@ export default function UserChatTopicsPage() {
                 </button>
               </div>
               <p className="mt-1 text-[10px] text-slate-500">
-                The reply uses your profile-specific knowledge stored in MongoDB. Swap the handler for an OpenAI API call to make it production-ready.
+                Replies use your profile&apos;s knowledge and the OpenAI API (set the OPENAIAPI environment variable on the server).
               </p>
             </div>
           </div>
