@@ -1,14 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { getDb } from "@/lib/mongodb";
 import { Profile } from "@/lib/types";
 
 export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const payload = (await request.json()) as Omit<Profile, "id">;
-  const { id } = params;
+  const { id } = await params;
 
   if (!payload.departmentId || !payload.name.trim()) {
     return NextResponse.json({ error: "Department and name are required" }, { status: 400 });
@@ -24,10 +24,10 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
-  { params }: { params: { id: string } },
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = params;
+  const { id } = await params;
   const db = await getDb();
 
   await Promise.all([
