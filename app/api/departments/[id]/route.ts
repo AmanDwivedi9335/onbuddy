@@ -35,7 +35,7 @@ export async function DELETE(
 
   const profileIds = profiles.map((profile) => profile.id);
 
-  const userFilters = [{ departmentId: id }];
+  const userFilters: Record<string, unknown>[] = [{ departmentId: id }];
   if (profileIds.length > 0) {
     userFilters.push({ profileId: { $in: profileIds } });
   }
