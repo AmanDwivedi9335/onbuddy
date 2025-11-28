@@ -4,9 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { ChatMessage, KnowledgeBaseEntry, UserAccount } from "@/lib/types";
-import { ChatTopic, readUserTopics, writeUserTopics } from "@/lib/userTopics";
-import { useOnbuddyData, uid } from "@/lib/useOnbuddyData";
+import {
+  ChatMessage,
+  ChatTopic,
+  KnowledgeBaseEntry,
+  UserAccount,
+} from "@/lib/types";
+import { useOnbuddyData } from "@/lib/useOnbuddyData";
 import { readUserSession, writeUserSession } from "@/lib/userSession";
 
 function formatDate(date: string) {
@@ -42,40 +46,28 @@ function summarizePrompt(prompt: string) {
   return snippet.length < prompt.trim().length ? `${snippet}…` : snippet;
 }
 
-function buildInitialTopics(session: UserAccount | null) {
-  if (!session) return [] as ChatTopic[];
+function topicSortDate(topic: ChatTopic) {
+  const lastMessage = topic.messages[topic.messages.length - 1];
+  return new Date(lastMessage?.createdAt ?? topic.createdAt).getTime();
+}
 
-  const storedTopics = readUserTopics(session.id);
-  if (storedTopics.length > 0) return storedTopics;
-
-  return [
-    {
-      id: uid("topic"),
-      title: "New topic",
-      createdAt: new Date().toISOString(),
-      messages: [],
-    },
-  ];
+function sortTopics(topics: ChatTopic[]) {
+  return [...topics].sort((a, b) => topicSortDate(b) - topicSortDate(a));
 }
 
 export default function UserChatTopicsPage() {
   const router = useRouter();
-  const { departments, profiles, knowledgeBase } = useOnbuddyData();
+  const { departments, profiles, knowledgeBase, loading, error, refreshData } =
+    useOnbuddyData();
 
-  const [initialState] = useState(() => {
-    const session = readUserSession();
-    const initialTopics = buildInitialTopics(session);
-    return {
-      session,
-      initialTopics,
-      activeTopicId: initialTopics[0]?.id ?? null,
-    };
-  });
-
-  const [userSession, setUserSession] = useState<UserAccount | null>(initialState.session);
-  const [topics, setTopics] = useState<ChatTopic[]>(initialState.initialTopics);
-  const [activeTopicId, setActiveTopicId] = useState<string | null>(initialState.activeTopicId);
+  const [userSession, setUserSession] = useState<UserAccount | null>(() =>
+    readUserSession(),
+  );
+  const [topics, setTopics] = useState<ChatTopic[]>([]);
+  const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [userInput, setUserInput] = useState("");
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicsError, setTopicsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userSession) {
@@ -86,9 +78,10 @@ export default function UserChatTopicsPage() {
   useEffect(() => {
     if (userSession) {
       writeUserSession(userSession);
-      writeUserTopics(userSession.id, topics);
+      loadTopics(userSession.id);
     }
-  }, [topics, userSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userSession?.id]);
 
   const userProfile = useMemo(
     () => profiles.find((p) => p.id === userSession?.profileId),
@@ -137,20 +130,65 @@ export default function UserChatTopicsPage() {
     return { reply, entry: top.entry };
   }
 
-  function startNewTopic() {
-    const newTopic: ChatTopic = {
-      id: uid("topic"),
-      title: "New topic",
-      createdAt: new Date().toISOString(),
-      messages: [],
-    };
-    setTopics((prev) => [newTopic, ...prev]);
-    setActiveTopicId(newTopic.id);
-    setUserInput("");
+  async function loadTopics(userId: string) {
+    setTopicsLoading(true);
+    setTopicsError(null);
+
+    try {
+      const response = await fetch(`/api/topics?userId=${userId}`);
+      if (!response.ok) {
+        throw new Error("Failed to load topics");
+      }
+      const payload = (await response.json()) as { topics: ChatTopic[] };
+      const sorted = sortTopics(payload.topics || []);
+
+      if (sorted.length === 0) {
+        await startNewTopic(userId);
+        return;
+      }
+
+      setTopics(sorted);
+      setActiveTopicId(sorted[0]?.id ?? null);
+    } catch (err) {
+      console.error("Failed to load topics", err);
+      setTopicsError("Unable to load chat topics from MongoDB.");
+    } finally {
+      setTopicsLoading(false);
+    }
   }
 
-  function handleSendMessage() {
-    if (!activeTopic) return;
+  async function startNewTopic(userId = userSession?.id) {
+    if (!userId) return;
+
+    setTopicsError(null);
+    try {
+      const response = await fetch("/api/topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          title: "New topic",
+          createdAt: new Date().toISOString(),
+          messages: [],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create topic");
+      }
+
+      const topic = (await response.json()) as ChatTopic;
+      setTopics((prev) => [topic, ...prev]);
+      setActiveTopicId(topic.id);
+      setUserInput("");
+    } catch (err) {
+      console.error("Failed to start topic", err);
+      setTopicsError("Unable to create a new topic in MongoDB.");
+    }
+  }
+
+  async function handleSendMessage() {
+    if (!activeTopic || !userSession) return;
 
     const trimmed = userInput.trim();
     if (!trimmed) return;
@@ -169,30 +207,28 @@ export default function UserChatTopicsPage() {
       createdAt: new Date().toISOString(),
     };
 
-    setTopics((prev) => {
-      const updated = prev.map((topic) => {
-        if (topic.id !== activeTopic.id) return topic;
+    const updatedTopic: ChatTopic = {
+      ...activeTopic,
+      title: activeTopic.title === "New topic" ? summarizePrompt(trimmed) : activeTopic.title,
+      messages: [...activeTopic.messages, newUserMessage, assistantMessage],
+    };
 
-        const updatedMessages = [...topic.messages, newUserMessage, assistantMessage];
-        const newTitle = topic.title === "New topic" ? summarizePrompt(trimmed) : topic.title;
-
-        return {
-          ...topic,
-          title: newTitle,
-          messages: updatedMessages,
-        };
-      });
-
-      updated.sort((a, b) => {
-        const aLast = a.messages[a.messages.length - 1]?.createdAt ?? a.createdAt;
-        const bLast = b.messages[b.messages.length - 1]?.createdAt ?? b.createdAt;
-        return new Date(bLast).getTime() - new Date(aLast).getTime();
-      });
-
-      return updated;
-    });
-
+    setTopics((prev) => sortTopics(prev.map((topic) => (topic.id === updatedTopic.id ? updatedTopic : topic))));
     setUserInput("");
+
+    try {
+      await fetch(`/api/topics/${activeTopic.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: updatedTopic.title,
+          messages: updatedTopic.messages,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to persist topic", err);
+      setTopicsError("Unable to save your chat messages to MongoDB.");
+    }
   }
 
   function signOutUser() {
@@ -206,6 +242,42 @@ export default function UserChatTopicsPage() {
       <main className="min-h-screen bg-slate-950 text-slate-50">
         <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-3">
           <p className="text-sm text-slate-400">Redirecting to user login...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (loading || topicsLoading) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-3">
+          <p className="text-sm text-slate-400">Loading chat workspace...</p>
+        </div>
+      </main>
+    );
+  }
+
+  const blockingError = error || topicsError;
+
+  if (blockingError) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="max-w-3xl mx-auto px-6 py-24 text-center space-y-4">
+          <p className="text-sm text-red-200">{blockingError}</p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-blue-950"
+              onClick={() => loadTopics(userSession.id)}
+            >
+              Retry topics
+            </button>
+            <button
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200"
+              onClick={refreshData}
+            >
+              Reload data
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -236,7 +308,7 @@ export default function UserChatTopicsPage() {
           </div>
 
           <button
-            onClick={startNewTopic}
+            onClick={() => startNewTopic()}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-400/40 bg-blue-500 text-blue-950 px-3 py-2 text-sm font-semibold shadow-lg shadow-blue-500/10 transition hover:bg-blue-400"
           >
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-950 text-blue-100">+</span>
@@ -270,7 +342,7 @@ export default function UserChatTopicsPage() {
           <div className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
             <p className="font-semibold">Grounded replies</p>
             <p className="text-emerald-50/80">
-              Each chat uses the knowledge base tied to {userProfile?.name ?? "your profile"}. Replace the demo reply builder with an API call to ship it live.
+              Each chat uses the knowledge base tied to {userProfile?.name ?? "your profile"}. Replies come from MongoDB-backed knowledge entries.
             </p>
           </div>
         </aside>
@@ -339,7 +411,7 @@ export default function UserChatTopicsPage() {
                 </button>
               </div>
               <p className="mt-1 text-[10px] text-slate-500">
-                The reply uses your profile-specific knowledge. Swap the handler for an OpenAI API call to make it production-ready.
+                The reply uses your profile-specific knowledge stored in MongoDB. Swap the handler for an OpenAI API call to make it production-ready.
               </p>
             </div>
           </div>
