@@ -73,17 +73,38 @@ export default function SuperadminPage() {
     if (!trimmedEmail || !superAdminCredentials.password.trim()) return;
 
     if (superAdminMode === "login") {
-      const match = users.find(
-        (user) =>
-          user.role === "superadmin" &&
-          user.email.toLowerCase() === trimmedEmail &&
-          user.password === superAdminCredentials.password,
-      );
+      try {
+        const response = await fetch("/api/users/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            password: superAdminCredentials.password,
+          }),
+        });
 
-      if (match) {
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          alert(
+            payload?.error ??
+              "Invalid superadmin credentials. Try aman@raja.com / 123456.",
+          );
+          return;
+        }
+
+        const match = (await response.json()) as UserAccount;
+
+        if (match.role !== "superadmin") {
+          alert("This account is not authorized for the control panel.");
+          return;
+        }
+
         setSuperAdminSession(match);
-      } else {
-        alert("Invalid superadmin credentials. Try aman@raja.com / 123456.");
+      } catch (err) {
+        console.error("Superadmin login failed", err);
+        alert("Unable to log in. Please try again.");
       }
     } else {
       const alreadyExists = users.some(

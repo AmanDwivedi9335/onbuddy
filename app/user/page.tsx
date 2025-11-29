@@ -50,22 +50,34 @@ export default function UserAuthPage() {
     if (!trimmedEmail || !userCredentials.password.trim()) return;
 
     if (userMode === "login") {
-      const match = users.find(
-        (user) => user.role === "user" && user.email.toLowerCase() === trimmedEmail,
-      );
+      try {
+        const response = await fetch("/api/users/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmedEmail, password: userCredentials.password }),
+        });
 
-      if (!match) {
-        alert("User account not found. Please sign up first.");
-        return;
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          alert(payload?.error ?? "Unable to log in. Please try again.");
+          return;
+        }
+
+        const match = (await response.json()) as UserAccount;
+
+        if (match.role !== "user") {
+          alert("This account is not set up for the user workspace.");
+          return;
+        }
+
+        writeUserSession(match);
+        router.push("/user/workspace");
+      } catch (err) {
+        console.error("User login failed", err);
+        alert("Unable to log in. Please try again.");
       }
-
-      if (match.password !== userCredentials.password) {
-        alert("Incorrect password. Please try again.");
-        return;
-      }
-
-      writeUserSession(match);
-      router.push("/user/workspace");
     } else {
       if (!userCredentials.departmentId || !userCredentials.profileId) {
         alert("Pick a department and profile to complete signup.");
