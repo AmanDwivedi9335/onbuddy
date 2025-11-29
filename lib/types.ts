@@ -1,11 +1,13 @@
+import { ObjectId } from "mongodb";
+
 export type Department = {
-  _id?: string;
+  _id?: ObjectId;
   id: string;
   name: string;
 };
 
 export type Profile = {
-  _id?: string;
+  _id?: ObjectId;
   id: string;
   departmentId: string;
   name: string;
@@ -13,7 +15,7 @@ export type Profile = {
 };
 
 export type KnowledgeBaseEntry = {
-  _id?: string;
+  _id?: ObjectId;
   id: string;
   profileId: string;
   title: string;
@@ -21,7 +23,7 @@ export type KnowledgeBaseEntry = {
 };
 
 export type UserAccount = {
-  _id?: string;
+  _id?: ObjectId;
   id: string;
   role: "superadmin" | "user";
   name: string;
@@ -38,7 +40,7 @@ export type ChatMessage = {
 };
 
 export type ChatTopic = {
-  _id?: string;
+  _id?: ObjectId;
   id: string;
   userId: string;
   title: string;
