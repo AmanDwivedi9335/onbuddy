@@ -51,18 +51,21 @@ export default function UserAuthPage() {
 
     if (userMode === "login") {
       const match = users.find(
-        (user) =>
-          user.role === "user" &&
-          user.email.toLowerCase() === trimmedEmail &&
-          user.password === userCredentials.password,
+        (user) => user.role === "user" && user.email.toLowerCase() === trimmedEmail,
       );
 
-      if (match) {
-        writeUserSession(match);
-        router.push("/user/workspace");
-      } else {
+      if (!match) {
         alert("User account not found. Please sign up first.");
+        return;
       }
+
+      if (match.password !== userCredentials.password) {
+        alert("Incorrect password. Please try again.");
+        return;
+      }
+
+      writeUserSession(match);
+      router.push("/user/workspace");
     } else {
       if (!userCredentials.departmentId || !userCredentials.profileId) {
         alert("Pick a department and profile to complete signup.");
